@@ -1,0 +1,23 @@
+--- 
+- 
+  hosts: all
+  name: "Apache Installation"
+  tasks: 
+    - 
+      apt: "apache2  update_cache=yes state=latest"
+      name: "install apache version"
+    - 
+      apache2.module: "state=present"
+      name: "enable apache modules"
+     
+      #to notify task handler
+      notify: 
+        - "restart apache2"
+
+    - 
+      #restarts apache2 after enabling module
+      handlers: 
+        - 
+          name: "restart apache2"
+          service: "name=apache2 state=restarted"
+...
