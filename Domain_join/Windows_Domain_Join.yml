@@ -1,0 +1,86 @@
+---
+#This Playbook checks if the necessary certificates are present and joins a Windows host to the specified Domain
+
+   #This task finds the thumbprint of the root certificate, if present
+   - name: thumbprint
+     win_shell: (Get-ChildItem -Path Cert:\LocalMachine\Root | Where-Object {$_.Thumbprint -eq "************************"})
+     register: mycert
+
+   #This block is executed when the required certificate is absent
+   - block:
+
+       #Creating a directory to store the certificates
+       - name: Create Certs directory
+         win_file:
+           path: C:\Certs\
+           state: directory
+
+       #Downloading the certificates on the Master Node
+       - name: Download Certificates on Master Node
+         delegate_to: localhost
+         aws_s3:
+           bucket: "{{ Bucket Name }}"
+           object: "{{ item }}"
+           dest: /tmp/{{ item }}
+           mode: get
+           region: 'us-east-1'
+          # overwrite: different
+         with_items:
+           - ********************.cer
+           - ********************.reg
+
+       #Copying from master node to windows target host
+       - name: Copy downloaded files from Master Node to Windows Server
+         win_copy:
+           src: "{{ item.sr }}"              
+           dest: "{{ item.dst }}"            
+         with_items:
+         - { sr: '***********.cer', dst: '***********.cer' }
+         - { sr: '***********.reg', dst: '***********' }
+
+       - name: Install the certificate
+         win_certificate_store:
+           path: ***********.cer
+           state: present
+
+       - name: Merge in a registry file
+         win_regmerge:
+           path: ***********.reg
+
+     when: mycert.stdout == ""
+
+   #To find the hostname
+   - name: Find Hostname
+     win_shell: hostname
+     register: hname
+     
+    #This task sets the domain username and password
+   - name: Extracting and Setting the Username & Password from Parameter Store
+     #no_log: true
+     set_fact:
+       userName: "{{ lookup('aws_ssm', '***********', region='us-east-1') }}"
+       password: "{{ lookup('aws_ssm', '***********', region='us-east-1' ) }}"
+     delegate_to: localhost
+     
+
+   #This task joins the target Windows host to the specified Domain
+   - name: Domain join
+     win_domain_membership:
+       dns_domain_name: ***********
+       domain_admin_user: "{{ username }}"
+       domain_admin_password: "{{ password }}"
+       state: domain
+     register: result
+
+   - name: Reboot 
+     win_reboot:
+     when: result.reboot_required
+
+   #Adds the domain groups to the administrators group
+   - name: Add domain group to administrators
+     win_group_membership:
+       name: administrators
+       members:
+         - ***********
+         - ***********
+       state: present
